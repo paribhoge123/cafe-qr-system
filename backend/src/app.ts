@@ -7,10 +7,12 @@ import { env } from './config/env';
 import { checkDbConnection } from './config/db';
 import { connectRedis } from './config/redis';
 import { errorHandler } from './middleware/errorHandler';
+import { logger } from './middleware/logger';
+import healthRoutes from './modules/health/health.routes';
 
 const app = express();
 
-// ─── Security & parsing middleware ──────────────────────────────
+// ─── Security & parsing middleware ───────────────────────────────
 app.use(helmet());
 app.use(
   cors({
@@ -21,41 +23,39 @@ app.use(
 app.use(compression());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
+app.use(logger);
 
 // ─── Rate limiting ───────────────────────────────────────────────
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
   max: 200,
   standardHeaders: true,
   legacyHeaders: false,
   message: { success: false, message: 'Too many requests, please try again later.' },
 });
-app.use(limiter);
+app.use(globalLimiter);
 
-// Stricter limiter for auth endpoints
-const authLimiter = rateLimit({
+export const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
   message: { success: false, message: 'Too many auth attempts, please try again later.' },
 });
 
-// ─── Health check ────────────────────────────────────────────────
-app.get('/health', (_req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
+// ─── Routes ──────────────────────────────────────────────────────
+app.use('/health', healthRoutes);
 
-// ─── Routes (registered here as modules are built) ───────────────
-// app.use('/api/auth', authLimiter, authRoutes);
-// app.use('/api/menu', menuRoutes);
-// app.use('/api/tables', tableRoutes);
-// app.use('/api/orders', orderRoutes);
+// Registered as modules are built in subsequent issues:
+// app.use('/api/auth',     authLimiter, authRoutes);
+// app.use('/api/menu',     menuRoutes);
+// app.use('/api/tables',   tableRoutes);
+// app.use('/api/orders',   orderRoutes);
 // app.use('/api/payments', paymentRoutes);
-// app.use('/api/kitchen', kitchenRoutes);
-// app.use('/api/admin', adminRoutes);
+// app.use('/api/kitchen',  kitchenRoutes);
+// app.use('/api/admin',    adminRoutes);
 
 // ─── 404 handler ─────────────────────────────────────────────────
 app.use((_req, res) => {
-  res.status(404).json({ success: false, message: 'Route not found' });
+  res.status(404).json({ success: false, code: 'NOT_FOUND', message: 'Route not found' });
 });
 
 // ─── Global error handler ────────────────────────────────────────
